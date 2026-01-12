@@ -11,6 +11,7 @@ Transform your workflow with a lightning-fast kanban board that runs entirely on
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-1.70+-000000?style=for-the-badge&logo=rust&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-3-07405E?style=for-the-badge&logo=sqlite&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)
 
 [Features](#-features) • [Tech Stack](#-tech-stack) • [Quick Start](#-quick-start) • [Build](#-build)
 
@@ -49,3 +50,7 @@ npm run tauri build
 ```
 
 **Requirements:** Node.js 18+ and Rust 1.70+
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details
