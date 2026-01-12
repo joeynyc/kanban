@@ -144,7 +144,8 @@ describe('BoardView', () => {
     const addButton = screen.getByText('Add column');
     await user.click(addButton);
 
-    const input = screen.getByPlaceholderText('Column name...') as HTMLInputElement;
+    // Wait for input to appear, then blur it by clicking body
+    screen.getByPlaceholderText('Column name...');
     await user.click(document.body);
 
     expect(screen.queryByPlaceholderText('Column name...')).not.toBeInTheDocument();
