@@ -427,4 +427,353 @@ mod tests {
 
         assert_eq!(count, 0);
     }
+
+    #[test]
+    fn test_update_card() {
+        let (db, _temp) = create_test_db();
+
+        // Create board and column
+        let (col_id, card_id) = db.with_connection(|conn| {
+            let board_id = Uuid::new_v4().to_string();
+            let col_id = Uuid::new_v4().to_string();
+            let card_id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&board_id, "Board", &now, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col_id, &board_id, "Column", 1.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO cards (id, column_id, title, description, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&card_id, &col_id, "Original Title", Some("Original description"), 1.0, 0, &now, &now],
+            )?;
+
+            Ok((col_id, card_id))
+        }).unwrap();
+
+        // Update card
+        let result = db.with_connection(|conn| {
+            let now = Utc::now().to_rfc3339();
+            conn.execute(
+                r#"UPDATE cards SET title = ?, description = ?, updated_at = ? WHERE id = ?"#,
+                rusqlite::params!["Updated Title", "Updated description", &now, &card_id],
+            )?;
+
+            let mut stmt = conn.prepare(
+                r#"SELECT id, column_id, title, description, "order", archived, created_at, updated_at FROM cards WHERE id = ?"#,
+            )?;
+
+            stmt.query_row([&card_id], |row| {
+                Ok(Card {
+                    id: row.get(0)?,
+                    column_id: row.get(1)?,
+                    title: row.get(2)?,
+                    description: row.get(3)?,
+                    order: row.get(4)?,
+                    archived: row.get::<_, i32>(5)? != 0,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })
+        });
+
+        assert!(result.is_ok());
+        let updated = result.unwrap();
+        assert_eq!(updated.title, "Updated Title");
+        assert_eq!(updated.description, Some("Updated description".to_string()));
+        assert_eq!(updated.order, 1.0);
+    }
+
+    #[test]
+    fn test_move_card() {
+        let (db, _temp) = create_test_db();
+
+        // Create board, two columns, and a card
+        let (col1_id, col2_id, card_id) = db.with_connection(|conn| {
+            let board_id = Uuid::new_v4().to_string();
+            let col1_id = Uuid::new_v4().to_string();
+            let col2_id = Uuid::new_v4().to_string();
+            let card_id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&board_id, "Board", &now, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col1_id, &board_id, "Column 1", 1.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col2_id, &board_id, "Column 2", 2.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO cards (id, column_id, title, description, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&card_id, &col1_id, "Test Card", None::<String>, 1.0, 0, &now, &now],
+            )?;
+
+            Ok((col1_id, col2_id, card_id))
+        }).unwrap();
+
+        // Move card to column 2
+        let result = db.with_connection(|conn| {
+            let now = Utc::now().to_rfc3339();
+            conn.execute(
+                r#"UPDATE cards SET column_id = ?, "order" = ?, updated_at = ? WHERE id = ?"#,
+                rusqlite::params![&col2_id, 5.0, &now, &card_id],
+            )?;
+
+            let mut stmt = conn.prepare(
+                r#"SELECT id, column_id, title, description, "order", archived, created_at, updated_at FROM cards WHERE id = ?"#,
+            )?;
+
+            stmt.query_row([&card_id], |row| {
+                Ok(Card {
+                    id: row.get(0)?,
+                    column_id: row.get(1)?,
+                    title: row.get(2)?,
+                    description: row.get(3)?,
+                    order: row.get(4)?,
+                    archived: row.get::<_, i32>(5)? != 0,
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })
+        });
+
+        assert!(result.is_ok());
+        let moved = result.unwrap();
+        assert_eq!(moved.column_id, col2_id);
+        assert_eq!(moved.order, 5.0);
+    }
+
+    #[test]
+    fn test_get_cards_for_board() {
+        let (db, _temp) = create_test_db();
+
+        // Create board, column, and cards
+        let (board_id, col_id) = db.with_connection(|conn| {
+            let board_id = Uuid::new_v4().to_string();
+            let col_id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&board_id, "Board", &now, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col_id, &board_id, "Column", 1.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO cards (id, column_id, title, description, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![Uuid::new_v4().to_string(), &col_id, "Card 1", None::<String>, 1.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO cards (id, column_id, title, description, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![Uuid::new_v4().to_string(), &col_id, "Card 2", None::<String>, 2.0, 0, &now, &now],
+            )?;
+
+            Ok((board_id, col_id))
+        }).unwrap();
+
+        // Get cards for board using the query
+        let cards = db.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                r#"SELECT c.id, c.column_id, c.title, c.description, c."order", c.archived, c.created_at, c.updated_at
+                   FROM cards c
+                   INNER JOIN columns col ON c.column_id = col.id
+                   WHERE col.board_id = ? AND c.archived = 0
+                   ORDER BY c."order" ASC"#,
+            )?;
+
+            let cards = stmt
+                .query_map([&board_id], |row| {
+                    Ok(Card {
+                        id: row.get(0)?,
+                        column_id: row.get(1)?,
+                        title: row.get(2)?,
+                        description: row.get(3)?,
+                        order: row.get(4)?,
+                        archived: row.get::<_, i32>(5)? != 0,
+                        created_at: row.get(6)?,
+                        updated_at: row.get(7)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(cards)
+        }).unwrap();
+
+        assert_eq!(cards.len(), 2);
+        assert_eq!(cards[0].title, "Card 1");
+        assert_eq!(cards[1].title, "Card 2");
+    }
+
+    #[test]
+    fn test_get_cards_for_column() {
+        let (db, _temp) = create_test_db();
+
+        // Create board and two columns with cards
+        let (col1_id, col2_id) = db.with_connection(|conn| {
+            let board_id = Uuid::new_v4().to_string();
+            let col1_id = Uuid::new_v4().to_string();
+            let col2_id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&board_id, "Board", &now, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col1_id, &board_id, "Column 1", 1.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col2_id, &board_id, "Column 2", 2.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO cards (id, column_id, title, description, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![Uuid::new_v4().to_string(), &col1_id, "Card 1", None::<String>, 1.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO cards (id, column_id, title, description, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![Uuid::new_v4().to_string(), &col2_id, "Card 2", None::<String>, 1.0, 0, &now, &now],
+            )?;
+
+            Ok((col1_id, col2_id))
+        }).unwrap();
+
+        // Get cards for column 1
+        let cards = db.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                r#"SELECT id, column_id, title, description, "order", archived, created_at, updated_at
+                   FROM cards
+                   WHERE column_id = ? AND archived = 0
+                   ORDER BY "order" ASC"#,
+            )?;
+
+            let cards = stmt
+                .query_map([&col1_id], |row| {
+                    Ok(Card {
+                        id: row.get(0)?,
+                        column_id: row.get(1)?,
+                        title: row.get(2)?,
+                        description: row.get(3)?,
+                        order: row.get(4)?,
+                        archived: row.get::<_, i32>(5)? != 0,
+                        created_at: row.get(6)?,
+                        updated_at: row.get(7)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(cards)
+        }).unwrap();
+
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].title, "Card 1");
+    }
+
+    #[test]
+    fn test_batch_update_card_orders() {
+        let (db, _temp) = create_test_db();
+
+        // Create board, column, and cards
+        let (col_id, card1_id, card2_id) = db.with_connection(|conn| {
+            let board_id = Uuid::new_v4().to_string();
+            let col_id = Uuid::new_v4().to_string();
+            let card1_id = Uuid::new_v4().to_string();
+            let card2_id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&board_id, "Board", &now, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col_id, &board_id, "Column", 1.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO cards (id, column_id, title, description, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&card1_id, &col_id, "Card 1", None::<String>, 1.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO cards (id, column_id, title, description, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&card2_id, &col_id, "Card 2", None::<String>, 2.0, 0, &now, &now],
+            )?;
+
+            Ok((col_id, card1_id, card2_id))
+        }).unwrap();
+
+        // Batch update orders (reverse them)
+        let result = db.with_connection(|conn| {
+            let now = Utc::now().to_rfc3339();
+            conn.execute(
+                r#"UPDATE cards SET "order" = ?, updated_at = ? WHERE id = ?"#,
+                rusqlite::params![2.0, &now, &card1_id],
+            )?;
+            conn.execute(
+                r#"UPDATE cards SET "order" = ?, updated_at = ? WHERE id = ?"#,
+                rusqlite::params![1.0, &now, &card2_id],
+            )?;
+            Ok(())
+        });
+
+        assert!(result.is_ok());
+
+        // Verify orders were updated
+        let cards = db.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                r#"SELECT id, column_id, title, description, "order", archived, created_at, updated_at
+                   FROM cards
+                   WHERE column_id = ? AND archived = 0
+                   ORDER BY "order" ASC"#,
+            )?;
+
+            let cards = stmt
+                .query_map([&col_id], |row| {
+                    Ok(Card {
+                        id: row.get(0)?,
+                        column_id: row.get(1)?,
+                        title: row.get(2)?,
+                        description: row.get(3)?,
+                        order: row.get(4)?,
+                        archived: row.get::<_, i32>(5)? != 0,
+                        created_at: row.get(6)?,
+                        updated_at: row.get(7)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(cards)
+        }).unwrap();
+
+        assert_eq!(cards[0].id, card2_id);
+        assert_eq!(cards[0].order, 1.0);
+        assert_eq!(cards[1].id, card1_id);
+        assert_eq!(cards[1].order, 2.0);
+    }
 }

@@ -286,4 +286,212 @@ mod tests {
 
         assert_eq!(count, 0);
     }
+
+    #[test]
+    fn test_update_column() {
+        let (db, _temp) = create_test_db();
+
+        // Create board and column
+        let (board_id, col_id) = db.with_connection(|conn| {
+            let board_id = Uuid::new_v4().to_string();
+            let col_id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&board_id, "Board", &now, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col_id, &board_id, "Original Name", 1.0, 0, &now, &now],
+            )?;
+
+            Ok((board_id, col_id))
+        }).unwrap();
+
+        // Update column
+        let result = db.with_connection(|conn| {
+            let now = Utc::now().to_rfc3339();
+            conn.execute(
+                r#"UPDATE columns SET name = ?, "order" = ?, updated_at = ? WHERE id = ?"#,
+                rusqlite::params!["Updated Name", 2.0, &now, &col_id],
+            )?;
+
+            let mut stmt = conn.prepare(
+                r#"SELECT id, board_id, name, "order", archived, created_at, updated_at FROM columns WHERE id = ?"#,
+            )?;
+
+            stmt.query_row([&col_id], |row| {
+                Ok(Column {
+                    id: row.get(0)?,
+                    board_id: row.get(1)?,
+                    name: row.get(2)?,
+                    order: row.get(3)?,
+                    archived: row.get::<_, i32>(4)? != 0,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                })
+            })
+        });
+
+        assert!(result.is_ok());
+        let updated = result.unwrap();
+        assert_eq!(updated.name, "Updated Name");
+        assert_eq!(updated.order, 2.0);
+    }
+
+    #[test]
+    fn test_reorder_columns() {
+        let (db, _temp) = create_test_db();
+
+        // Create board and columns
+        let (board_id, col1_id, col2_id, col3_id) = db.with_connection(|conn| {
+            let board_id = Uuid::new_v4().to_string();
+            let col1_id = Uuid::new_v4().to_string();
+            let col2_id = Uuid::new_v4().to_string();
+            let col3_id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&board_id, "Board", &now, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col1_id, &board_id, "Column 1", 1.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col2_id, &board_id, "Column 2", 2.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col3_id, &board_id, "Column 3", 3.0, 0, &now, &now],
+            )?;
+
+            Ok((board_id, col1_id, col2_id, col3_id))
+        }).unwrap();
+
+        // Reorder columns (reverse order)
+        let result = db.with_connection(|conn| {
+            let now = Utc::now().to_rfc3339();
+            conn.execute(
+                r#"UPDATE columns SET "order" = ?, updated_at = ? WHERE id = ?"#,
+                rusqlite::params![3.0, &now, &col1_id],
+            )?;
+            conn.execute(
+                r#"UPDATE columns SET "order" = ?, updated_at = ? WHERE id = ?"#,
+                rusqlite::params![2.0, &now, &col2_id],
+            )?;
+            conn.execute(
+                r#"UPDATE columns SET "order" = ?, updated_at = ? WHERE id = ?"#,
+                rusqlite::params![1.0, &now, &col3_id],
+            )?;
+            Ok(())
+        });
+
+        assert!(result.is_ok());
+
+        // Verify new order
+        let columns = db.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                r#"SELECT id, board_id, name, "order", archived, created_at, updated_at
+                   FROM columns
+                   WHERE board_id = ? AND archived = 0
+                   ORDER BY "order" ASC"#,
+            )?;
+
+            let columns = stmt
+                .query_map([&board_id], |row| {
+                    Ok(Column {
+                        id: row.get(0)?,
+                        board_id: row.get(1)?,
+                        name: row.get(2)?,
+                        order: row.get(3)?,
+                        archived: row.get::<_, i32>(4)? != 0,
+                        created_at: row.get(5)?,
+                        updated_at: row.get(6)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(columns)
+        }).unwrap();
+
+        assert_eq!(columns.len(), 3);
+        assert_eq!(columns[0].id, col3_id);
+        assert_eq!(columns[1].id, col2_id);
+        assert_eq!(columns[2].id, col1_id);
+    }
+
+    #[test]
+    fn test_get_columns_for_board() {
+        let (db, _temp) = create_test_db();
+
+        // Create board and columns
+        let board_id = db.with_connection(|conn| {
+            let board_id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&board_id, "Board", &now, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![Uuid::new_v4().to_string(), &board_id, "To Do", 1.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![Uuid::new_v4().to_string(), &board_id, "In Progress", 2.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![Uuid::new_v4().to_string(), &board_id, "Done", 3.0, 0, &now, &now],
+            )?;
+
+            Ok(board_id)
+        }).unwrap();
+
+        // Get all columns
+        let columns = db.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                r#"SELECT id, board_id, name, "order", archived, created_at, updated_at
+                   FROM columns
+                   WHERE board_id = ? AND archived = 0
+                   ORDER BY "order" ASC"#,
+            )?;
+
+            let columns = stmt
+                .query_map([&board_id], |row| {
+                    Ok(Column {
+                        id: row.get(0)?,
+                        board_id: row.get(1)?,
+                        name: row.get(2)?,
+                        order: row.get(3)?,
+                        archived: row.get::<_, i32>(4)? != 0,
+                        created_at: row.get(5)?,
+                        updated_at: row.get(6)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(columns)
+        }).unwrap();
+
+        assert_eq!(columns.len(), 3);
+        assert_eq!(columns[0].name, "To Do");
+        assert_eq!(columns[1].name, "In Progress");
+        assert_eq!(columns[2].name, "Done");
+        // Verify they're ordered correctly
+        assert!(columns[0].order < columns[1].order);
+        assert!(columns[1].order < columns[2].order);
+    }
 }

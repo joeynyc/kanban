@@ -324,4 +324,53 @@ mod tests {
         }).unwrap();
         assert_eq!(board_exists, 0);
     }
+
+    #[test]
+    fn test_set_last_opened_board() {
+        let (db, _temp) = create_test_db();
+
+        // Create board
+        let board_id = db.with_connection(|conn| {
+            let id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&id, "Test Board", &now, &now, &now],
+            )?;
+            Ok(id)
+        }).unwrap();
+
+        // Wait a tiny bit to ensure timestamp changes
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Set last opened
+        let result = db.with_connection(|conn| {
+            let now = Utc::now().to_rfc3339();
+            conn.execute(
+                "UPDATE boards SET last_opened_at = ? WHERE id = ?",
+                rusqlite::params![&now, &board_id],
+            )
+        });
+
+        assert!(result.is_ok());
+
+        // Verify it was updated
+        let updated_board = db.with_connection(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT id, name, last_opened_at, created_at, updated_at FROM boards WHERE id = ?",
+            )?;
+
+            stmt.query_row([&board_id], |row| {
+                Ok(Board {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    last_opened_at: row.get(2)?,
+                    created_at: row.get(3)?,
+                    updated_at: row.get(4)?,
+                })
+            })
+        }).unwrap();
+
+        assert!(updated_board.last_opened_at.is_some());
+    }
 }

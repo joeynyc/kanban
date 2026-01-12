@@ -1,6 +1,9 @@
 mod commands;
 mod db;
 
+#[cfg(test)]
+mod integration_tests;
+
 use db::Database;
 use std::sync::Arc;
 use tauri::Manager;
