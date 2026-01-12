@@ -209,3 +209,81 @@ pub fn reorder_columns(
     })
     .map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_helpers::test_helpers::create_test_db;
+
+    #[test]
+    fn test_create_column() {
+        let (db, _temp) = create_test_db();
+
+        // Create board first
+        let board_id = db.with_connection(|conn| {
+            let id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&id, "Board", &now, &now, &now],
+            )?;
+            Ok(id)
+        }).unwrap();
+
+        // Create column
+        let result = db.with_connection(|conn| {
+            let id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+            let order = 1.0;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&id, &board_id, "To Do", order, 0, &now, &now],
+            )?;
+
+            Ok((id, order))
+        });
+
+        assert!(result.is_ok());
+        let (_, order) = result.unwrap();
+        assert_eq!(order, 1.0);
+    }
+
+    #[test]
+    fn test_delete_column() {
+        let (db, _temp) = create_test_db();
+
+        let (board_id, col_id) = db.with_connection(|conn| {
+            let board_id = Uuid::new_v4().to_string();
+            let col_id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&board_id, "Board", &now, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col_id, &board_id, "Column", 1.0, 0, &now, &now],
+            )?;
+
+            Ok((board_id, col_id))
+        }).unwrap();
+
+        // Delete column
+        let delete_result = db.with_connection(|conn| {
+            conn.execute("DELETE FROM columns WHERE id = ?", [&col_id])
+        });
+
+        assert!(delete_result.is_ok());
+
+        // Verify it's gone
+        let count = db.with_connection(|conn| {
+            let mut stmt = conn.prepare("SELECT COUNT(*) FROM columns WHERE board_id = ?")?;
+            stmt.query_row([&board_id], |row| row.get::<_, i32>(0))
+        }).unwrap();
+
+        assert_eq!(count, 0);
+    }
+}

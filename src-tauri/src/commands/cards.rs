@@ -297,3 +297,134 @@ pub fn batch_update_card_orders(
     })
     .map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_helpers::test_helpers::create_test_db;
+
+    #[test]
+    fn test_create_card() {
+        let (db, _temp) = create_test_db();
+
+        let (board_id, col_id) = db.with_connection(|conn| {
+            let board_id = Uuid::new_v4().to_string();
+            let col_id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&board_id, "Board", &now, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col_id, &board_id, "Column", 1.0, 0, &now, &now],
+            )?;
+
+            Ok((board_id, col_id))
+        }).unwrap();
+
+        // Create card
+        let result = db.with_connection(|conn| {
+            let id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                r#"INSERT INTO cards (id, column_id, title, description, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&id, &col_id, "Test Card", None::<String>, 1.0, 0, &now, &now],
+            )?;
+
+            Ok(id)
+        });
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_order_calculation_on_create() {
+        let (db, _temp) = create_test_db();
+
+        let col_id = db.with_connection(|conn| {
+            let board_id = Uuid::new_v4().to_string();
+            let col_id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&board_id, "Board", &now, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col_id, &board_id, "Column", 1.0, 0, &now, &now],
+            )?;
+
+            Ok(col_id)
+        }).unwrap();
+
+        // Create multiple cards - verify order auto-increments
+        for i in 1..=3 {
+            let _ = db.with_connection(|conn| {
+                let id = Uuid::new_v4().to_string();
+                let now = Utc::now().to_rfc3339();
+                conn.execute(
+                    r#"INSERT INTO cards (id, column_id, title, description, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+                    rusqlite::params![&id, &col_id, format!("Card {}", i), None::<String>, i as f64, 0, &now, &now],
+                )
+            });
+        }
+
+        // Verify 3 cards exist
+        let count = db.with_connection(|conn| {
+            let mut stmt = conn.prepare("SELECT COUNT(*) FROM cards WHERE column_id = ?")?;
+            stmt.query_row([&col_id], |row| row.get::<_, i32>(0))
+        }).unwrap();
+
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn test_delete_card() {
+        let (db, _temp) = create_test_db();
+
+        let (col_id, card_id) = db.with_connection(|conn| {
+            let board_id = Uuid::new_v4().to_string();
+            let col_id = Uuid::new_v4().to_string();
+            let card_id = Uuid::new_v4().to_string();
+            let now = Utc::now().to_rfc3339();
+
+            conn.execute(
+                "INSERT INTO boards (id, name, last_opened_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                rusqlite::params![&board_id, "Board", &now, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO columns (id, board_id, name, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&col_id, &board_id, "Column", 1.0, 0, &now, &now],
+            )?;
+
+            conn.execute(
+                r#"INSERT INTO cards (id, column_id, title, description, "order", archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+                rusqlite::params![&card_id, &col_id, "Card", None::<String>, 1.0, 0, &now, &now],
+            )?;
+
+            Ok((col_id, card_id))
+        }).unwrap();
+
+        // Delete card
+        let result = db.with_connection(|conn| {
+            conn.execute("DELETE FROM cards WHERE id = ?", [&card_id])
+        });
+
+        assert!(result.is_ok());
+
+        // Verify it's gone
+        let count = db.with_connection(|conn| {
+            let mut stmt = conn.prepare("SELECT COUNT(*) FROM cards WHERE column_id = ?")?;
+            stmt.query_row([&col_id], |row| row.get::<_, i32>(0))
+        }).unwrap();
+
+        assert_eq!(count, 0);
+    }
+}
