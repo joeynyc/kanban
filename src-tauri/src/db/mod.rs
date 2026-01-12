@@ -1,6 +1,9 @@
 pub mod init;
 pub mod migrations;
 
+#[cfg(test)]
+pub mod test_helpers;
+
 use parking_lot::Mutex;
 use rusqlite::Connection;
 use std::path::Path;
