@@ -292,7 +292,7 @@ mod tests {
         let (db, _temp) = create_test_db();
 
         // Create board and column
-        let (board_id, col_id) = db.with_connection(|conn| {
+        let (_board_id, col_id) = db.with_connection(|conn| {
             let board_id = Uuid::new_v4().to_string();
             let col_id = Uuid::new_v4().to_string();
             let now = Utc::now().to_rfc3339();

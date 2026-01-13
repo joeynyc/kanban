@@ -9,7 +9,7 @@ mod tests {
         let (db, _temp) = create_test_db();
 
         // 1. Create board
-        let (board_id, col1_id, col2_id, card1_id, card2_id) = db.with_connection(|conn| {
+        let (board_id, col1_id, col2_id, card1_id, _card2_id) = db.with_connection(|conn| {
             let board_id = Uuid::new_v4().to_string();
             let col1_id = Uuid::new_v4().to_string();
             let col2_id = Uuid::new_v4().to_string();

@@ -307,7 +307,7 @@ mod tests {
     fn test_create_card() {
         let (db, _temp) = create_test_db();
 
-        let (board_id, col_id) = db.with_connection(|conn| {
+        let (_board_id, col_id) = db.with_connection(|conn| {
             let board_id = Uuid::new_v4().to_string();
             let col_id = Uuid::new_v4().to_string();
             let now = Utc::now().to_rfc3339();
@@ -433,7 +433,7 @@ mod tests {
         let (db, _temp) = create_test_db();
 
         // Create board and column
-        let (col_id, card_id) = db.with_connection(|conn| {
+        let (_col_id, card_id) = db.with_connection(|conn| {
             let board_id = Uuid::new_v4().to_string();
             let col_id = Uuid::new_v4().to_string();
             let card_id = Uuid::new_v4().to_string();
@@ -495,7 +495,7 @@ mod tests {
         let (db, _temp) = create_test_db();
 
         // Create board, two columns, and a card
-        let (col1_id, col2_id, card_id) = db.with_connection(|conn| {
+        let (_col1_id, col2_id, card_id) = db.with_connection(|conn| {
             let board_id = Uuid::new_v4().to_string();
             let col1_id = Uuid::new_v4().to_string();
             let col2_id = Uuid::new_v4().to_string();
@@ -562,7 +562,7 @@ mod tests {
         let (db, _temp) = create_test_db();
 
         // Create board, column, and cards
-        let (board_id, col_id) = db.with_connection(|conn| {
+        let (board_id, _col_id) = db.with_connection(|conn| {
             let board_id = Uuid::new_v4().to_string();
             let col_id = Uuid::new_v4().to_string();
             let now = Utc::now().to_rfc3339();
@@ -628,7 +628,7 @@ mod tests {
         let (db, _temp) = create_test_db();
 
         // Create board and two columns with cards
-        let (col1_id, col2_id) = db.with_connection(|conn| {
+        let (col1_id, _col2_id) = db.with_connection(|conn| {
             let board_id = Uuid::new_v4().to_string();
             let col1_id = Uuid::new_v4().to_string();
             let col2_id = Uuid::new_v4().to_string();

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { BoardView } from './BoardView';
@@ -193,9 +193,11 @@ describe('BoardView', () => {
       },
     };
 
-    handlers.onDragStart(dragStartEvent);
+    act(() => {
+      handlers.onDragStart(dragStartEvent);
+    });
 
-    // Verify the drag overlay shows the card (component state is internal)
+    // Verify drag overlay shows card (component state is internal)
     expect(screen.getByTestId('drag-overlay')).toBeInTheDocument();
   });
 
@@ -215,9 +217,11 @@ describe('BoardView', () => {
       },
     };
 
-    handlers.onDragStart(dragStartEvent);
+    act(() => {
+      handlers.onDragStart(dragStartEvent);
+    });
 
-    // Verify the drag overlay exists
+    // Verify drag overlay exists
     expect(screen.getByTestId('drag-overlay')).toBeInTheDocument();
   });
 
