@@ -68,6 +68,31 @@ pub fn run() {
             commands::backup::list_backups,
             commands::backup::cleanup_old_backups,
             commands::backup::check_database_integrity,
+            // Labels
+            commands::labels::get_labels_for_board,
+            commands::labels::create_label,
+            commands::labels::update_label,
+            commands::labels::delete_label,
+            commands::labels::add_label_to_card,
+            commands::labels::remove_label_from_card,
+            commands::labels::get_labels_for_card,
+            commands::labels::get_card_labels_for_board,
+            // Checklists
+            commands::checklists::get_checklists_for_card,
+            commands::checklists::get_checklists_for_board,
+            commands::checklists::create_checklist,
+            commands::checklists::update_checklist,
+            commands::checklists::delete_checklist,
+            commands::checklists::get_checklist_items_for_board,
+            commands::checklists::create_checklist_item,
+            commands::checklists::update_checklist_item,
+            commands::checklists::delete_checklist_item,
+            commands::checklists::get_checklist_items_for_checklist,
+            // Export/Import
+            commands::export::export_board_json,
+            commands::export::export_board_csv,
+            commands::export::import_board_json,
+            commands::export::import_trello_json,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

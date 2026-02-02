@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useKanbanStore } from '../store';
 import { ConfirmDialog } from './ui/ConfirmDialog';
-import type { Card } from '../types';
+import { LabelPicker } from './LabelPicker';
+import { DatePicker } from './DatePicker';
+import { PrioritySelector } from './PrioritySelector';
+import { ChecklistView } from './ChecklistView';
+import type { Card, Priority } from '../types';
 
 interface CardDetailProps {
   card: Card;
@@ -9,7 +13,7 @@ interface CardDetailProps {
 }
 
 export function CardDetail({ card, onClose }: CardDetailProps) {
-  const { updateCard, deleteCard, cards } = useKanbanStore();
+  const { updateCard, deleteCard, cards, getChecklistsForCard, createChecklist } = useKanbanStore();
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editTitle, setEditTitle] = useState(card.title);
@@ -18,6 +22,7 @@ export function CardDetail({ card, onClose }: CardDetailProps) {
 
   // Get the latest card data from store
   const currentCard = cards[card.id] || card;
+  const checklists = getChecklistsForCard(currentCard.id);
 
   useEffect(() => {
     setEditTitle(currentCard.title);
@@ -38,9 +43,21 @@ export function CardDetail({ card, onClose }: CardDetailProps) {
     setIsEditingDescription(false);
   };
 
+  const handleDueDateChange = async (dueDate: string | null) => {
+    await updateCard(currentCard.id, { dueDate: dueDate ?? undefined });
+  };
+
+  const handlePriorityChange = async (priority: Priority) => {
+    await updateCard(currentCard.id, { priority });
+  };
+
   const handleDelete = async () => {
     await deleteCard(currentCard.id);
     onClose();
+  };
+
+  const handleAddChecklist = async () => {
+    await createChecklist({ cardId: currentCard.id, name: 'Checklist' });
   };
 
   const handleOverlayClick = (e: React.MouseEvent) => {
@@ -92,6 +109,22 @@ export function CardDetail({ card, onClose }: CardDetailProps) {
 
         <div className="card-detail-body">
           <div className="card-detail-section">
+            <div className="card-detail-label">Labels</div>
+            <LabelPicker cardId={currentCard.id} />
+          </div>
+
+          <div className="card-detail-metadata">
+            <div className="card-detail-meta-item">
+              <div className="card-detail-label">Due Date</div>
+              <DatePicker value={currentCard.dueDate} onChange={handleDueDateChange} />
+            </div>
+            <div className="card-detail-meta-item">
+              <div className="card-detail-label">Priority</div>
+              <PrioritySelector value={currentCard.priority} onChange={handlePriorityChange} />
+            </div>
+          </div>
+
+          <div className="card-detail-section">
             <div className="card-detail-label">Description</div>
             {isEditingDescription ? (
               <textarea
@@ -110,6 +143,18 @@ export function CardDetail({ card, onClose }: CardDetailProps) {
                 {currentCard.description || 'Click to add a description...'}
               </div>
             )}
+          </div>
+
+          <div className="card-detail-section">
+            <div className="card-detail-section-header">
+              <div className="card-detail-label">Checklists</div>
+              <button className="card-detail-add-btn" onClick={handleAddChecklist}>
+                + Add Checklist
+              </button>
+            </div>
+            {checklists.map((checklist) => (
+              <ChecklistView key={checklist.id} checklist={checklist} />
+            ))}
           </div>
         </div>
 

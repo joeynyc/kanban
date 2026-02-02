@@ -41,6 +41,67 @@ const MIGRATIONS: &[(&str, &str)] = &[
         CREATE INDEX IF NOT EXISTS idx_cards_column ON cards(column_id, "order");
         CREATE INDEX IF NOT EXISTS idx_boards_last_opened ON boards(last_opened_at);
     "#),
+    ("002_labels", r#"
+        -- Labels table (board-scoped)
+        CREATE TABLE IF NOT EXISTS labels (
+            id TEXT PRIMARY KEY NOT NULL,
+            board_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            color TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (board_id) REFERENCES boards(id) ON DELETE CASCADE
+        );
+
+        -- Card-label junction table (many-to-many)
+        CREATE TABLE IF NOT EXISTS card_labels (
+            card_id TEXT NOT NULL,
+            label_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (card_id, label_id),
+            FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE,
+            FOREIGN KEY (label_id) REFERENCES labels(id) ON DELETE CASCADE
+        );
+
+        -- Indexes for performance
+        CREATE INDEX IF NOT EXISTS idx_labels_board ON labels(board_id);
+        CREATE INDEX IF NOT EXISTS idx_card_labels_card ON card_labels(card_id);
+        CREATE INDEX IF NOT EXISTS idx_card_labels_label ON card_labels(label_id);
+    "#),
+    ("003_due_dates_priorities", r#"
+        ALTER TABLE cards ADD COLUMN due_date TEXT;
+        ALTER TABLE cards ADD COLUMN priority TEXT DEFAULT 'none';
+        CREATE INDEX IF NOT EXISTS idx_cards_due_date ON cards(due_date);
+        CREATE INDEX IF NOT EXISTS idx_cards_priority ON cards(priority);
+    "#),
+    ("004_checklists", r#"
+        -- Checklists table
+        CREATE TABLE IF NOT EXISTS checklists (
+            id TEXT PRIMARY KEY NOT NULL,
+            card_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            "order" REAL NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (card_id) REFERENCES cards(id) ON DELETE CASCADE
+        );
+
+        -- Checklist items table
+        CREATE TABLE IF NOT EXISTS checklist_items (
+            id TEXT PRIMARY KEY NOT NULL,
+            checklist_id TEXT NOT NULL,
+            text TEXT NOT NULL,
+            checked INTEGER DEFAULT 0,
+            "order" REAL NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (checklist_id) REFERENCES checklists(id) ON DELETE CASCADE
+        );
+
+        -- Indexes for performance
+        CREATE INDEX IF NOT EXISTS idx_checklists_card ON checklists(card_id, "order");
+        CREATE INDEX IF NOT EXISTS idx_checklist_items_checklist ON checklist_items(checklist_id, "order");
+    "#),
 ];
 
 pub fn run_migrations(conn: &Connection) -> Result<()> {
@@ -99,6 +160,10 @@ mod tests {
         assert!(tables.contains(&"boards".to_string()));
         assert!(tables.contains(&"columns".to_string()));
         assert!(tables.contains(&"cards".to_string()));
+        assert!(tables.contains(&"labels".to_string()));
+        assert!(tables.contains(&"card_labels".to_string()));
+        assert!(tables.contains(&"checklists".to_string()));
+        assert!(tables.contains(&"checklist_items".to_string()));
         assert!(tables.contains(&"_migrations".to_string()));
 
         // Verify migration was recorded
@@ -107,7 +172,7 @@ mod tests {
             stmt.query_row([], |row| row.get::<_, i32>(0))
         }).unwrap();
 
-        assert_eq!(migration_count, 1);
+        assert_eq!(migration_count, 4);
     }
 
     #[test]
@@ -143,6 +208,13 @@ mod tests {
         assert!(indexes.contains(&"idx_columns_board".to_string()));
         assert!(indexes.contains(&"idx_cards_column".to_string()));
         assert!(indexes.contains(&"idx_boards_last_opened".to_string()));
-        assert_eq!(indexes.len(), 3);
+        assert!(indexes.contains(&"idx_labels_board".to_string()));
+        assert!(indexes.contains(&"idx_card_labels_card".to_string()));
+        assert!(indexes.contains(&"idx_card_labels_label".to_string()));
+        assert!(indexes.contains(&"idx_cards_due_date".to_string()));
+        assert!(indexes.contains(&"idx_cards_priority".to_string()));
+        assert!(indexes.contains(&"idx_checklists_card".to_string()));
+        assert!(indexes.contains(&"idx_checklist_items_checklist".to_string()));
+        assert_eq!(indexes.len(), 10);
     }
 }

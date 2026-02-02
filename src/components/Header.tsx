@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { useKanbanStore } from '../store';
 import { ConfirmDialog } from './ui/ConfirmDialog';
+import { LabelManager } from './LabelManager';
+import { ImportExportMenu } from './ImportExportMenu';
 
 export function Header() {
   const { getActiveBoard, updateBoard, deleteBoard, boards, setActiveBoard } = useKanbanStore();
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showLabelManager, setShowLabelManager] = useState(false);
 
   const board = getActiveBoard();
 
@@ -15,6 +18,9 @@ export function Header() {
       <header className="app-header">
         <div className="header">
           <h2 className="header-title">No board selected</h2>
+          <div className="header-actions">
+            <ImportExportMenu />
+          </div>
         </div>
       </header>
     );
@@ -76,11 +82,23 @@ export function Header() {
         )}
 
         <div className="header-actions">
+          <button className="header-btn" onClick={() => setShowLabelManager(true)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+              <line x1="7" y1="7" x2="7.01" y2="7" />
+            </svg>
+            Labels
+          </button>
+          <ImportExportMenu />
           <button className="header-btn danger" onClick={() => setShowDeleteConfirm(true)}>
             Delete Board
           </button>
         </div>
       </div>
+
+      {showLabelManager && (
+        <LabelManager onClose={() => setShowLabelManager(false)} />
+      )}
 
       {showDeleteConfirm && (
         <ConfirmDialog

@@ -30,6 +30,8 @@ export const createMockCard = (overrides?: Partial<Card>): Card => ({
   archived: false,
   createdAt: '2024-01-01T00:00:00Z',
   updatedAt: '2024-01-01T00:00:00Z',
+  dueDate: null,
+  priority: 'none',
   ...overrides,
 });
 

@@ -30,8 +30,8 @@ describe('Card', () => {
 
     render(<Card card={card} onClick={onClick} />);
 
-    const indicators = document.querySelector('.card-indicators');
-    expect(indicators).not.toBeInTheDocument();
+    const indicator = document.querySelector('.card-has-description');
+    expect(indicator).not.toBeInTheDocument();
   });
 
   it('should call onClick handler when clicked', async () => {

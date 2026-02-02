@@ -15,6 +15,8 @@ pub struct Card {
     pub archived: bool,
     pub created_at: String,
     pub updated_at: String,
+    pub due_date: Option<String>,
+    pub priority: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -24,6 +26,8 @@ pub struct CreateCardInput {
     pub title: String,
     pub description: Option<String>,
     pub order: Option<f64>,
+    pub due_date: Option<String>,
+    pub priority: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,6 +37,8 @@ pub struct UpdateCardInput {
     pub description: Option<String>,
     pub order: Option<f64>,
     pub archived: Option<bool>,
+    pub due_date: Option<String>,
+    pub priority: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,7 +62,7 @@ pub fn get_cards_for_board(
 ) -> Result<Vec<Card>, String> {
     db.with_connection(|conn| {
         let mut stmt = conn.prepare(
-            r#"SELECT c.id, c.column_id, c.title, c.description, c."order", c.archived, c.created_at, c.updated_at
+            r#"SELECT c.id, c.column_id, c.title, c.description, c."order", c.archived, c.created_at, c.updated_at, c.due_date, c.priority
                FROM cards c
                INNER JOIN columns col ON c.column_id = col.id
                WHERE col.board_id = ? AND c.archived = 0
@@ -74,6 +80,8 @@ pub fn get_cards_for_board(
                     archived: row.get::<_, i32>(5)? != 0,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
+                    due_date: row.get(8)?,
+                    priority: row.get::<_, Option<String>>(9)?.unwrap_or_else(|| "none".to_string()),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -90,7 +98,7 @@ pub fn get_cards_for_column(
 ) -> Result<Vec<Card>, String> {
     db.with_connection(|conn| {
         let mut stmt = conn.prepare(
-            r#"SELECT id, column_id, title, description, "order", archived, created_at, updated_at
+            r#"SELECT id, column_id, title, description, "order", archived, created_at, updated_at, due_date, priority
                FROM cards
                WHERE column_id = ? AND archived = 0
                ORDER BY "order" ASC"#,
@@ -107,6 +115,8 @@ pub fn get_cards_for_column(
                     archived: row.get::<_, i32>(5)? != 0,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
+                    due_date: row.get(8)?,
+                    priority: row.get::<_, Option<String>>(9)?.unwrap_or_else(|| "none".to_string()),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -148,12 +158,14 @@ pub fn create_card(
         archived: false,
         created_at: now.clone(),
         updated_at: now,
+        due_date: input.due_date,
+        priority: input.priority.unwrap_or_else(|| "none".to_string()),
     };
 
     db.with_connection(|conn| {
         conn.execute(
-            r#"INSERT INTO cards (id, column_id, title, description, "order", archived, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)"#,
+            r#"INSERT INTO cards (id, column_id, title, description, "order", archived, created_at, updated_at, due_date, priority)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"#,
             rusqlite::params![
                 &card.id,
                 &card.column_id,
@@ -162,7 +174,9 @@ pub fn create_card(
                 &card.order,
                 card.archived as i32,
                 &card.created_at,
-                &card.updated_at
+                &card.updated_at,
+                &card.due_date,
+                &card.priority
             ],
         )?;
         Ok(())
@@ -201,6 +215,14 @@ pub fn update_card(
             updates.push("archived = ?");
             params.push(Box::new(archived as i32));
         }
+        if let Some(due_date) = &input.due_date {
+            updates.push("due_date = ?");
+            params.push(Box::new(due_date.clone()));
+        }
+        if let Some(priority) = &input.priority {
+            updates.push("priority = ?");
+            params.push(Box::new(priority.clone()));
+        }
 
         params.push(Box::new(id.clone()));
 
@@ -214,7 +236,7 @@ pub fn update_card(
 
         // Fetch updated card
         let mut stmt = conn.prepare(
-            r#"SELECT id, column_id, title, description, "order", archived, created_at, updated_at
+            r#"SELECT id, column_id, title, description, "order", archived, created_at, updated_at, due_date, priority
                FROM cards WHERE id = ?"#,
         )?;
 
@@ -228,6 +250,8 @@ pub fn update_card(
                 archived: row.get::<_, i32>(5)? != 0,
                 created_at: row.get(6)?,
                 updated_at: row.get(7)?,
+                due_date: row.get(8)?,
+                priority: row.get::<_, Option<String>>(9)?.unwrap_or_else(|| "none".to_string()),
             })
         })
     })
@@ -259,7 +283,7 @@ pub fn move_card(
 
         // Fetch updated card
         let mut stmt = conn.prepare(
-            r#"SELECT id, column_id, title, description, "order", archived, created_at, updated_at
+            r#"SELECT id, column_id, title, description, "order", archived, created_at, updated_at, due_date, priority
                FROM cards WHERE id = ?"#,
         )?;
 
@@ -273,6 +297,8 @@ pub fn move_card(
                 archived: row.get::<_, i32>(5)? != 0,
                 created_at: row.get(6)?,
                 updated_at: row.get(7)?,
+                due_date: row.get(8)?,
+                priority: row.get::<_, Option<String>>(9)?.unwrap_or_else(|| "none".to_string()),
             })
         })
     })
@@ -479,6 +505,8 @@ mod tests {
                     archived: row.get::<_, i32>(5)? != 0,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
+                    due_date: None,
+                    priority: "none".to_string(),
                 })
             })
         });
@@ -547,6 +575,8 @@ mod tests {
                     archived: row.get::<_, i32>(5)? != 0,
                     created_at: row.get(6)?,
                     updated_at: row.get(7)?,
+                    due_date: None,
+                    priority: "none".to_string(),
                 })
             })
         });
@@ -611,6 +641,8 @@ mod tests {
                         archived: row.get::<_, i32>(5)? != 0,
                         created_at: row.get(6)?,
                         updated_at: row.get(7)?,
+                        due_date: None,
+                        priority: "none".to_string(),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -682,6 +714,8 @@ mod tests {
                         archived: row.get::<_, i32>(5)? != 0,
                         created_at: row.get(6)?,
                         updated_at: row.get(7)?,
+                        due_date: None,
+                        priority: "none".to_string(),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
@@ -764,6 +798,8 @@ mod tests {
                         archived: row.get::<_, i32>(5)? != 0,
                         created_at: row.get(6)?,
                         updated_at: row.get(7)?,
+                        due_date: None,
+                        priority: "none".to_string(),
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
